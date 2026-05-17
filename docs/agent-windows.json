@@ -1,0 +1,38 @@
+{
+  "model": "Qwen3-Coder-30B-A3B-Instruct-GGUF",
+  "endpointUrl": "http://localhost:13305/api/",
+  "servers": [
+    {
+      "type": "stdio",
+      "config": {
+        "command": "C:\\Program Files\\nodejs\\npx.cmd",
+        "args": [
+          "-y",
+          "@playwright/mcp@latest",
+          "--headless"
+        ]
+      }
+    },
+    {
+      "type": "stdio",
+      "config": {
+        "command": "C:\\Program Files\\nodejs\\npx.cmd",
+        "args": [
+          "-y",
+          "@modelcontextprotocol/server-filesystem",
+          ".",
+          "C:\\Users\\YourUser\\Documents"
+        ]
+      }
+    },
+    {
+      "type": "stdio",
+      "config": {
+        "command": "uvx",
+        "args": [
+          "mcp-server-fetch"
+        ]
+      }
+    }
+  ]
+}

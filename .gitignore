@@ -1,0 +1,32 @@
+# Binaries
+go-agent/llm-agent
+mcp-servers/ports/mcp-server-ports
+
+# Go build artifacts
+*.exe
+*.test
+*.out
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Claude Code
+.claude/
+CLAUDE.md
+
+# Logs
+*.log
+/tmp/
+
+# Node modules (from npx caching)
+node_modules/
+.playwright-mcp/
+prompt.txt

@@ -1,0 +1,60 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  go:
+    name: Go (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+          cache: true
+          cache-dependency-path: |
+            go-agent/go.sum
+            mcp-servers/ports/go.sum
+
+      - name: Vet (go-agent)
+        working-directory: go-agent
+        run: go vet ./...
+
+      - name: Vet (mcp-server-ports)
+        working-directory: mcp-servers/ports
+        run: go vet ./...
+
+      - name: Test (go-agent)
+        working-directory: go-agent
+        run: go test ./... -count=1 -timeout 60s
+
+      - name: Test (mcp-server-ports)
+        working-directory: mcp-servers/ports
+        run: go test ./... -count=1 -timeout 60s
+
+      - name: Build
+        working-directory: go-agent
+        run: make build
+
+  shellcheck:
+    name: ShellCheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install shellcheck
+        run: sudo apt-get update && sudo apt-get install -y shellcheck
+      - name: Run shellcheck
+        run: shellcheck scripts/*.sh

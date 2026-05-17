@@ -1,0 +1,559 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LLM Agent Dashboard</title>
+<style>
+  :root {
+    --bg: #0d1117; --surface: #161b22; --border: #30363d;
+    --text: #e6edf3; --dim: #8b949e; --accent: #58a6ff;
+    --green: #3fb950; --yellow: #d29922; --red: #f85149;
+    --cyan: #39c5cf; --purple: #bc8cff;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, 'Segoe UI', sans-serif; background: var(--bg); color: var(--text); }
+
+  /* Layout */
+  .header { background: var(--surface); border-bottom: 1px solid var(--border); padding: 12px 24px; display: flex; align-items: center; gap: 16px; }
+  .header h1 { font-size: 16px; font-weight: 600; }
+  .header .status { font-size: 12px; color: var(--dim); }
+  .header .queue-status { font-size: 12px; color: var(--dim); margin-left: auto; display: flex; gap: 12px; align-items: center; }
+  .queue-status .qs-item { display: flex; align-items: center; gap: 4px; }
+  .queue-status .qs-label { color: var(--dim); }
+  .queue-status .qs-value { color: var(--text); font-weight: 500; font-family: monospace; }
+  .queue-status .qs-active { color: var(--green); }
+  .queue-status .qs-queued { color: var(--yellow); }
+  .queue-status .qs-idle { color: var(--dim); }
+  .header .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; margin-right: 4px; }
+  .dot.connected { background: var(--green); }
+  .dot.disconnected { background: var(--red); }
+
+  .container { display: flex; height: calc(100vh - 49px); }
+  .sidebar { width: 320px; min-width: 320px; background: var(--surface); border-right: 1px solid var(--border); padding: 20px; overflow-y: auto; }
+  .main { flex: 1; overflow-y: auto; padding: 24px; }
+
+  /* Sidebar */
+  .sidebar h2 { font-size: 14px; color: var(--accent); margin-bottom: 12px; text-transform: uppercase; letter-spacing: 1px; }
+  .sidebar h3 { font-size: 13px; color: var(--text); margin: 16px 0 8px; }
+  .sidebar p, .sidebar li { font-size: 12px; color: var(--dim); line-height: 1.6; }
+  .sidebar ul { padding-left: 16px; }
+  .sidebar .loop-diagram { background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 12px; margin: 12px 0; font-size: 11px; font-family: monospace; color: var(--dim); line-height: 1.8; }
+  .sidebar .loop-diagram .highlight { color: var(--accent); }
+  .sidebar .loop-diagram .tool { color: var(--yellow); }
+  .sidebar .loop-diagram .end { color: var(--green); }
+
+  /* Flow */
+  .query-block { margin-bottom: 32px; }
+  .query-input { background: var(--surface); border: 1px solid var(--accent); border-radius: 8px; padding: 12px 16px; margin-bottom: 16px; font-size: 13px; }
+  .query-input .label { font-size: 11px; color: var(--accent); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 4px; }
+
+  .round-group { margin-left: 24px; border-left: 2px solid var(--border); padding-left: 20px; margin-bottom: 16px; position: relative; }
+  .round-group::before { content: ''; position: absolute; left: -6px; top: 0; width: 10px; height: 10px; border-radius: 50%; background: var(--border); }
+  .round-label { font-size: 11px; color: var(--dim); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 8px; }
+
+  /* Step boxes */
+  .step { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; margin-bottom: 12px; overflow: hidden; }
+  .step.llm-req { border-left: 3px solid var(--cyan); }
+  .step.llm-resp { border-left: 3px solid var(--green); }
+  .step.tool-call { border-left: 3px solid var(--yellow); }
+  .step.tool-result { border-left: 3px solid var(--purple); }
+  .step.error { border-left: 3px solid var(--red); }
+  .step.final { border-left: 3px solid var(--green); border-color: var(--green); }
+
+  .step-header { display: flex; align-items: center; padding: 10px 14px; gap: 8px; }
+  .step-icon { font-size: 14px; width: 20px; text-align: center; }
+  .step-type { font-size: 12px; font-weight: 600; flex: 1; }
+  .step-type.llm { color: var(--cyan); }
+  .step-type.tool { color: var(--yellow); }
+  .step-type.result { color: var(--purple); }
+  .step-type.response { color: var(--green); }
+  .step-type.err { color: var(--red); }
+
+  .step-metrics { display: flex; gap: 12px; padding: 0 14px 10px; flex-wrap: wrap; }
+  .metric { font-size: 11px; color: var(--dim); }
+  .metric .val { color: var(--text); font-weight: 500; font-family: monospace; }
+
+  .step-io { display: flex; border-top: 1px solid var(--border); }
+  .io-btn { flex: 1; padding: 8px 14px; font-size: 11px; color: var(--dim); cursor: pointer; text-align: center; border: none; background: none; transition: background 0.15s; }
+  .io-btn:hover { background: rgba(255,255,255,0.05); color: var(--text); }
+  .io-btn + .io-btn { border-left: 1px solid var(--border); }
+
+  .connector { text-align: center; color: var(--border); font-size: 16px; margin: 4px 0; }
+
+  /* Answer box */
+  .answer { background: var(--surface); border: 1px solid var(--green); border-radius: 8px; padding: 16px; margin-top: 16px; margin-left: 24px; }
+  .answer .label { font-size: 11px; color: var(--green); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 8px; }
+  .answer .content { font-size: 13px; line-height: 1.6; white-space: pre-wrap; }
+
+  /* Overlay */
+  .overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.7); z-index: 100; justify-content: center; align-items: center; }
+  .overlay.active { display: flex; }
+  .overlay-content { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; max-width: 800px; width: 90%; max-height: 80vh; overflow-y: auto; }
+  .overlay-header { display: flex; align-items: center; padding: 14px 18px; border-bottom: 1px solid var(--border); }
+  .overlay-header h3 { font-size: 14px; flex: 1; }
+  .overlay-close { background: none; border: none; color: var(--dim); font-size: 20px; cursor: pointer; padding: 4px 8px; }
+  .overlay-close:hover { color: var(--text); }
+  .overlay-body { padding: 18px; font-size: 13px; font-family: -apple-system, 'Segoe UI', sans-serif; line-height: 1.7; word-break: break-word; color: var(--dim); max-height: 60vh; overflow-y: auto; }
+
+  /* Markdown styles */
+  .md-p { margin: 0 0 8px; }
+  .md-h1 { font-size: 18px; color: var(--text); margin: 16px 0 8px; font-weight: 600; }
+  .md-h2 { font-size: 16px; color: var(--text); margin: 14px 0 6px; font-weight: 600; }
+  .md-h3 { font-size: 14px; color: var(--text); margin: 12px 0 6px; font-weight: 600; }
+  .md-h4 { font-size: 13px; color: var(--text); margin: 10px 0 4px; font-weight: 600; }
+  .md-code { background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 12px; margin: 8px 0; overflow-x: auto; font-family: monospace; font-size: 12px; color: var(--text); }
+  .md-code code { background: none; padding: 0; }
+  .md-inline { background: var(--bg); border: 1px solid var(--border); border-radius: 3px; padding: 1px 5px; font-family: monospace; font-size: 12px; color: var(--accent); }
+  .md-ul { padding-left: 20px; margin: 6px 0; }
+  .md-ul li { margin: 2px 0; }
+  .md-hr { border: none; border-top: 1px solid var(--border); margin: 12px 0; }
+  .md-link { color: var(--accent); text-decoration: none; }
+  .md-link:hover { text-decoration: underline; }
+  .answer .content .md-p { color: var(--text); }
+  .answer .content .md-h1, .answer .content .md-h2, .answer .content .md-h3 { color: var(--accent); }
+
+  /* Empty state */
+  .empty { text-align: center; padding: 60px 20px; color: var(--dim); }
+  .empty h2 { font-size: 18px; color: var(--text); margin-bottom: 8px; }
+  .empty p { font-size: 13px; }
+
+  /* Streaming indicator */
+  @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+  .streaming { animation: pulse 1.5s ease-in-out infinite; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>LLM Agent</h1>
+  <div class="queue-status" id="queueStatus"></div>
+  <div class="status"><span class="dot disconnected" id="statusDot"></span><span id="statusText">Connecting...</span></div>
+</div>
+
+<div class="container">
+  <div class="sidebar">
+    <h2>How the Agent Loop Works</h2>
+
+    <p>The agent orchestrates a loop between the LLM and MCP tool servers until the LLM produces a final text answer.</p>
+
+    <h3>The Loop</h3>
+    <div class="loop-diagram">
+      <span class="highlight">1.</span> User sends a message<br>
+      <span class="highlight">2.</span> Agent sends message + tool definitions to LLM<br>
+      <span class="highlight">3.</span> LLM responds with either:<br>
+      &nbsp;&nbsp;&nbsp;<span class="tool">a) tool_calls</span> -> agent executes tools<br>
+      &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;-> results appended to history<br>
+      &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;-> <span class="highlight">go to step 2</span><br>
+      &nbsp;&nbsp;&nbsp;<span class="end">b) text only</span> -> <span class="end">loop ends</span><br>
+      <span class="highlight">4.</span> Final text returned to user
+    </div>
+
+    <h3>When Does the Loop End?</h3>
+    <ul>
+      <li>The LLM returns a response with <strong>no tool_calls</strong> -- just text content</li>
+      <li>The maximum round limit (10) is reached</li>
+      <li>A tool fails repeatedly (2+ times) -- the LLM is told to answer from its own knowledge</li>
+      <li>The user cancels with Ctrl+C</li>
+    </ul>
+
+    <h3>What Each Box Shows</h3>
+    <ul>
+      <li><strong>LLM Request</strong> -- messages and tools sent to the model</li>
+      <li><strong>LLM Response</strong> -- what the model returned, with TTFT, tokens, and throughput</li>
+      <li><strong>Tool Call</strong> -- which tool the LLM chose and with what arguments</li>
+      <li><strong>Tool Result</strong> -- what the tool returned</li>
+    </ul>
+    <p style="margin-top: 12px;">Click <strong>Input</strong> or <strong>Output</strong> on any box to inspect the full token content.</p>
+
+    <h3>Metrics</h3>
+    <ul>
+      <li><strong>TTFT</strong> -- time to first token (streaming latency)</li>
+      <li><strong>Tokens</strong> -- prompt + completion token counts</li>
+      <li><strong>tok/s</strong> -- generation throughput</li>
+      <li><strong>Elapsed</strong> -- total step duration</li>
+    </ul>
+
+    <h3>Active Safety Limits</h3>
+    <p>Server-configured caps. Clients can request <em>stricter</em> limits per-query (via REST <code>limits</code> body field or MCP <code>_meta</code> with <code>io.llm-agent/</code> prefix) but never looser.</p>
+    <div class="loop-diagram" id="limitsPanel">
+      <span class="highlight">Loading...</span>
+    </div>
+  </div>
+
+  <div class="main" id="flow">
+    <div class="empty" id="emptyState">
+      <h2>Waiting for agent activity...</h2>
+      <p>Send a query in the terminal to see the agent loop visualized here.</p>
+    </div>
+  </div>
+</div>
+
+<div class="overlay" id="overlay" onclick="if(event.target===this)closeOverlay()">
+  <div class="overlay-content">
+    <div class="overlay-header">
+      <h3 id="overlayTitle">Content</h3>
+      <button class="overlay-close" onclick="closeOverlay()">&times;</button>
+    </div>
+    <div class="overlay-body" id="overlayBody"></div>
+  </div>
+</div>
+
+<script>
+// Lightweight markdown renderer (no external dependencies).
+function renderMarkdown(text) {
+  if (!text) return '';
+  let html = typeof text === 'object' ? JSON.stringify(text, null, 2) : text;
+  // Escape HTML first.
+  html = html.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  // Code blocks (``` ... ```)
+  html = html.replace(/```(\w*)\n([\s\S]*?)```/g, (_, lang, code) =>
+    `<pre class="md-code"><code>${code.trim()}</code></pre>`);
+  // Inline code
+  html = html.replace(/`([^`]+)`/g, '<code class="md-inline">$1</code>');
+  // Headers
+  html = html.replace(/^#### (.+)$/gm, '<h4 class="md-h4">$1</h4>');
+  html = html.replace(/^### (.+)$/gm, '<h3 class="md-h3">$1</h3>');
+  html = html.replace(/^## (.+)$/gm, '<h2 class="md-h2">$1</h2>');
+  html = html.replace(/^# (.+)$/gm, '<h1 class="md-h1">$1</h1>');
+  // Bold and italic
+  html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+  html = html.replace(/\*(.+?)\*/g, '<em>$1</em>');
+  // Horizontal rules
+  html = html.replace(/^---+$/gm, '<hr class="md-hr">');
+  // Unordered lists
+  html = html.replace(/^[\-\*] (.+)$/gm, '<li>$1</li>');
+  html = html.replace(/(<li>.*<\/li>\n?)+/g, m => `<ul class="md-ul">${m}</ul>`);
+  // Ordered lists
+  html = html.replace(/^\d+\. (.+)$/gm, '<li>$1</li>');
+  // Links
+  html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" class="md-link" target="_blank">$1</a>');
+  // Line breaks (double newline = paragraph, single = br)
+  html = html.replace(/\n\n/g, '</p><p class="md-p">');
+  html = html.replace(/\n/g, '<br>');
+  html = `<p class="md-p">${html}</p>`;
+  // Clean up empty paragraphs
+  html = html.replace(/<p class="md-p"><\/p>/g, '');
+  return html;
+}
+
+const flow = document.getElementById('flow');
+const emptyState = document.getElementById('emptyState');
+const overlay = document.getElementById('overlay');
+const overlayTitle = document.getElementById('overlayTitle');
+const overlayBody = document.getElementById('overlayBody');
+const statusDot = document.getElementById('statusDot');
+const statusText = document.getElementById('statusText');
+
+let currentQuery = null;
+let currentRound = null;
+let eventData = {};  // Store full data for overlay inspection.
+let eventId = 0;
+
+function showOverlay(title, content) {
+  overlayTitle.textContent = title;
+  overlayBody.innerHTML = renderMarkdown(content);
+  overlay.classList.add('active');
+}
+function closeOverlay() { overlay.classList.remove('active'); }
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeOverlay(); });
+
+function createStep(type, cssClass, icon, label) {
+  const id = `evt-${eventId++}`;
+  const div = document.createElement('div');
+  div.className = `step ${cssClass}`;
+  div.id = id;
+  div.innerHTML = `
+    <div class="step-header">
+      <span class="step-icon">${icon}</span>
+      <span class="step-type ${cssClass.split(' ')[0]}">${label}</span>
+    </div>
+    <div class="step-metrics" id="${id}-metrics"></div>
+    <div class="step-io" id="${id}-io"></div>
+  `;
+  return { div, id };
+}
+
+function addMetric(div, id, label, value) {
+  const el = div.querySelector(`#${id}-metrics`);
+  if (el) {
+    const m = document.createElement('span');
+    m.className = 'metric';
+    m.innerHTML = `${label} <span class="val">${value}</span>`;
+    el.appendChild(m);
+  }
+}
+
+function addIOButton(div, id, label, title, content) {
+  const el = div.querySelector(`#${id}-io`);
+  if (el) {
+    const btn = document.createElement('button');
+    btn.className = 'io-btn';
+    btn.textContent = label;
+    btn.onclick = () => showOverlay(title, content);
+    el.appendChild(btn);
+  }
+}
+
+function addConnector(parent) {
+  const c = document.createElement('div');
+  c.className = 'connector';
+  c.textContent = '\u2502';  // vertical line
+  parent.appendChild(c);
+}
+
+function ensureQuery(input) {
+  if (!currentQuery) {
+    emptyState.style.display = 'none';
+    currentQuery = document.createElement('div');
+    currentQuery.className = 'query-block';
+
+    const qInput = document.createElement('div');
+    qInput.className = 'query-input';
+    qInput.innerHTML = `<div class="label">Query</div><div>${escapeHtml(input || '...')}</div>`;
+    currentQuery.appendChild(qInput);
+
+    flow.appendChild(currentQuery);
+  }
+}
+
+function ensureRound(round) {
+  ensureQuery('');
+  if (!currentRound || currentRound.dataset.round !== String(round)) {
+    currentRound = document.createElement('div');
+    currentRound.className = 'round-group';
+    currentRound.dataset.round = round;
+
+    const label = document.createElement('div');
+    label.className = 'round-label';
+    label.textContent = `Round ${round}`;
+    currentRound.appendChild(label);
+
+    currentQuery.appendChild(currentRound);
+  }
+}
+
+function escapeHtml(s) {
+  const d = document.createElement('div');
+  d.textContent = s;
+  return d.innerHTML;
+}
+
+function fmtMs(ms) {
+  if (!ms) return '0ms';
+  if (ms < 1000) return `${Math.round(ms)}ms`;
+  return `${(ms / 1000).toFixed(2)}s`;
+}
+
+function handleEvent(evt) {
+  const d = evt.data;
+
+  switch (evt.type) {
+    case 'query_start': {
+      // Reset for new query.
+      currentQuery = null;
+      currentRound = null;
+      ensureQuery(d.input);
+      break;
+    }
+
+    case 'round_start': {
+      ensureRound(evt.round);
+      break;
+    }
+
+    case 'llm_request': {
+      ensureRound(evt.round);
+      const { div, id } = createStep('llm_request', 'llm-req', '\u2192', 'LLM Request');
+      addMetric(div, id, 'messages', d.message_count);
+      addMetric(div, id, 'tools', d.tool_count);
+      addMetric(div, id, 'context', `~${d.context_chars} chars`);
+      addIOButton(div, id, 'Input (messages)', `LLM Request - Messages (Round ${evt.round})`,
+        d.messages || `Messages: ${d.message_count}\nTools: ${d.tool_count}\nContext: ~${d.context_chars} chars`);
+      currentRound.appendChild(div);
+      addConnector(currentRound);
+      break;
+    }
+
+    case 'llm_response': {
+      ensureRound(evt.round);
+      const isToolCall = d.has_tool_calls;
+      const cssClass = isToolCall ? 'llm-resp' : 'llm-resp final';
+      const label = isToolCall ? `LLM Response (${d.tool_call_count} tool call${d.tool_call_count > 1 ? 's' : ''})` : 'LLM Response (final)';
+      const { div, id } = createStep('llm_response', cssClass, '\u2190', label);
+
+      if (d.ttft_ms) addMetric(div, id, 'TTFT', fmtMs(d.ttft_ms));
+      if (d.prompt_tokens) addMetric(div, id, 'prompt', d.prompt_tokens);
+      if (d.completion_tokens) addMetric(div, id, 'completion', d.completion_tokens);
+      if (d.tokens_per_sec) addMetric(div, id, 'tok/s', d.tokens_per_sec.toFixed(1));
+      if (d.elapsed_ms) addMetric(div, id, 'elapsed', fmtMs(d.elapsed_ms));
+      addMetric(div, id, 'finish', d.finish_reason || 'unknown');
+
+      // Build a summary of what the LLM returned.
+      let outputSummary = '';
+      if (d.content) outputSummary += d.content;
+      if (d.has_tool_calls) {
+        outputSummary += `\n\n--- Tool Calls (${d.tool_call_count}) ---\nfinish_reason: ${d.finish_reason}`;
+      }
+      outputSummary += `\n\n--- Metrics ---\nTTFT: ${fmtMs(d.ttft_ms)}\nPrompt tokens: ${d.prompt_tokens}\nCompletion tokens: ${d.completion_tokens}\nTotal tokens: ${d.total_tokens}\ntok/s: ${d.tokens_per_sec ? d.tokens_per_sec.toFixed(1) : 'n/a'}\nElapsed: ${fmtMs(d.elapsed_ms)}`;
+
+      addIOButton(div, id, 'Output', `LLM Response (Round ${evt.round})`, outputSummary);
+
+      currentRound.appendChild(div);
+      if (isToolCall) addConnector(currentRound);
+      break;
+    }
+
+    case 'tool_call': {
+      ensureRound(evt.round);
+      const { div, id } = createStep('tool_call', 'tool-call', '\u26A1', `Tool: ${d.tool_name}`);
+      addIOButton(div, id, 'Input (args)', `${d.tool_name} Arguments`, d.tool_args || '{}');
+      // Store for pairing with result.
+      eventData[`tool_${evt.round}_${d.tool_name}`] = d;
+      currentRound.appendChild(div);
+      addConnector(currentRound);
+      break;
+    }
+
+    case 'tool_result': {
+      ensureRound(evt.round);
+      const { div, id } = createStep('tool_result', 'tool-result', '\u2190', `Result: ${d.tool_name}`);
+      if (d.elapsed_ms) addMetric(div, id, 'elapsed', fmtMs(d.elapsed_ms));
+      addMetric(div, id, 'size', `${(d.tool_result || '').length} chars`);
+      if (d.truncated) addMetric(div, id, 'truncated', 'yes');
+      // Show both input (from the matching tool_call) and output.
+      const callData = eventData[`tool_${evt.round}_${d.tool_name}`];
+      if (callData) {
+        addIOButton(div, id, 'Input (args)', `${d.tool_name} Arguments`, callData.tool_args || '{}');
+      }
+      addIOButton(div, id, 'Output', `${d.tool_name} Result`, d.tool_result || '(empty)');
+      currentRound.appendChild(div);
+      addConnector(currentRound);
+      break;
+    }
+
+    case 'query_end': {
+      if (d.final_answer && currentQuery) {
+        const answer = document.createElement('div');
+        answer.className = 'answer';
+        // Annotate the header with termination reason when it's not a plain success
+        // so viewers see at a glance why the loop ended (max_rounds, loop_detected, etc).
+        let reasonTag = '';
+        if (d.termination_reason && d.termination_reason !== 'success') {
+          const tag = d.early_stopped ? `early-stop: ${d.termination_reason}` : d.termination_reason;
+          reasonTag = ` &middot; <span style="color: var(--yellow);">${tag}</span>`;
+        }
+        answer.innerHTML = `<div class="label">Final Answer (${d.total_rounds} round${d.total_rounds !== 1 ? 's' : ''})${reasonTag}</div><div class="content">${renderMarkdown(d.final_answer)}</div>`;
+        currentQuery.appendChild(answer);
+      }
+      currentRound = null;
+      break;
+    }
+
+    case 'error': {
+      ensureRound(evt.round || 0);
+      const { div, id } = createStep('error', 'error', '\u2717', 'Error');
+      addIOButton(div, id, 'Error Details', 'Error', d.error || 'Unknown error');
+      if (currentRound) currentRound.appendChild(div);
+      break;
+    }
+  }
+
+  // Auto-scroll to bottom.
+  flow.scrollTop = flow.scrollHeight;
+}
+
+// SSE connection with auto-reconnect.
+function connect() {
+  const es = new EventSource('/events');
+
+  es.onopen = () => {
+    statusDot.className = 'dot connected';
+    statusText.textContent = 'Connected';
+  };
+
+  es.onmessage = (msg) => {
+    try {
+      const evt = JSON.parse(msg.data);
+      handleEvent(evt);
+    } catch (e) {
+      console.error('Failed to parse event:', e);
+    }
+  };
+
+  es.onerror = () => {
+    statusDot.className = 'dot disconnected';
+    statusText.textContent = 'Reconnecting...';
+    es.close();
+    setTimeout(connect, 2000);
+  };
+}
+
+connect();
+
+// Queue status tracking -- uses events for active state, polls health for queue depth.
+const queueStatusEl = document.getElementById('queueStatus');
+let agentBusy = false;
+let totalQueries = 0;
+let totalRounds = 0;
+
+function updateQueueDisplay(queueLen, queueMax) {
+  const stateClass = agentBusy ? 'qs-active' : 'qs-idle';
+  const stateText = agentBusy ? 'Processing' : 'Idle';
+  queueStatusEl.innerHTML = `
+    <span class="qs-item"><span class="qs-label">Agent:</span> <span class="qs-value ${stateClass}">${stateText}</span></span>
+    <span class="qs-item"><span class="qs-label">Queue:</span> <span class="qs-value ${queueLen > 0 ? 'qs-queued' : 'qs-idle'}">${queueLen}/${queueMax}</span></span>
+    <span class="qs-item"><span class="qs-label">Queries:</span> <span class="qs-value">${totalQueries}</span></span>
+    <span class="qs-item"><span class="qs-label">Rounds:</span> <span class="qs-value">${totalRounds}</span></span>
+  `;
+}
+
+// Track active state from events (no polling needed).
+const origHandleEvent = handleEvent;
+handleEvent = function(evt) {
+  origHandleEvent(evt);
+  if (evt.type === 'query_start') { agentBusy = true; totalQueries++; }
+  if (evt.type === 'round_start') { totalRounds++; }
+  if (evt.type === 'query_end' || evt.type === 'error') { agentBusy = false; }
+  updateQueueDisplay(0, 20);  // Will be corrected by next poll.
+};
+
+// Poll health endpoint for queue depth (every 3s).
+async function pollHealth() {
+  try {
+    const resp = await fetch('/api/v1/health');
+    const data = await resp.json();
+    updateQueueDisplay(data.queue_length || 0, data.queue_max || 20);
+  } catch (e) {
+    // Server not reachable -- display will update on reconnect.
+  }
+}
+pollHealth();
+setInterval(pollHealth, 3000);
+
+// Fetch server-configured safety limits once on load (read-only).
+async function loadLimits() {
+  const panel = document.getElementById('limitsPanel');
+  try {
+    const resp = await fetch('/api/v1/limits');
+    if (!resp.ok) throw new Error('not ready');
+    const data = await resp.json();
+    const d = data.defaults || {};
+    const fmt = (v, unit) => (v && v > 0) ? `<span class="tool">${v}${unit||''}</span>` : '<span class="end">unlimited</span>';
+    panel.innerHTML = `
+      <div>max rounds:&nbsp;&nbsp;&nbsp;&nbsp; ${fmt(d.max_rounds)}</div>
+      <div>max tokens:&nbsp;&nbsp;&nbsp;&nbsp; ${fmt(d.max_tokens)}</div>
+      <div>timeout:&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; ${fmt(d.timeout, 's')}</div>
+      <div>loop detect:&nbsp;&nbsp;&nbsp; ${fmt(d.loop_detect)}</div>
+      <div>max result:&nbsp;&nbsp;&nbsp;&nbsp; ${fmt(d.max_result, 'B')}</div>
+      <div>early stop:&nbsp;&nbsp;&nbsp;&nbsp; <span class="${d.early_stop ? 'end' : 'tool'}">${d.early_stop ? 'on' : 'off'}</span></div>
+    `;
+  } catch (e) {
+    panel.innerHTML = '<span class="highlight">(agent not ready)</span>';
+    setTimeout(loadLimits, 2000);
+  }
+}
+loadLimits();
+</script>
+</body>
+</html>
