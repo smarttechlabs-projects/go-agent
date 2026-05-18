@@ -399,7 +399,6 @@ Append to the `servers` array in `agent.json`. Browse available servers at [mcps
 | AMD Tiny Agents Article | [amd.com](https://www.amd.com/en/developer/resources/technical-articles/2025/local-tiny-agents--mcp-agents-on-ryzen-ai-with-lemonade-server.html) |
 | HF MCP Course | [huggingface.co](https://huggingface.co/learn/mcp-course/en/unit2/lemonade-server) |
 | MCP Server Directory | [mcpservers.org](https://mcpservers.org) / [awesome-mcp-servers](https://github.com/punkpeye/awesome-mcp-servers) |
-| LLM Server Migration | [tool-migration.md](docs/tool-migration.md) -- using LM Studio, Ollama, or vLLM instead of Lemonade |
 
 ## License
 

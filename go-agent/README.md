@@ -6,8 +6,6 @@ Supported backends:
 - **Local** (no API key): [Lemonade Server](https://github.com/lemonade-sdk/lemonade), [LM Studio](https://lmstudio.ai/), [vLLM](https://docs.vllm.ai/), [Ollama](https://ollama.com/), or any OpenAI-compatible endpoint
 - **Commercial**: [OpenAI](https://platform.openai.com/) (GPT-4o), [Anthropic](https://docs.anthropic.com/) (Claude), [Google Gemini](https://ai.google.dev/), [Groq](https://groq.com/), [Together AI](https://together.ai/), [Mistral](https://mistral.ai/), [DeepSeek](https://deepseek.com/)
 
-See [tool-migration.md](../docs/tool-migration.md) for backend-specific setup.
-
 ## Scope & Positioning
 
 This is a **reference-quality local agent with production-ish polish** -- intended to be a readable, single-binary reference implementation rather than a managed platform. Compared to typical production agent systems:
@@ -727,6 +725,49 @@ Every query runs under a set of **AgentLimits** -- runtime safety caps that boun
 | Early stop | `early_stop` | bool | false | On hard limit, synthesize a final answer instead of erroring. |
 
 **Clamping rule:** `effective = min(client_request, server_default)`. A client asking `max_rounds: 999` against a server cap of 10 gets 10. A client asking `max_rounds: 5` gets 5. Missing fields fall back to the default.
+
+**Setting the server-wide defaults:** all six limits are configurable at the top level of `agent.json`. These are the *strictest* values the server will tolerate; per-query overrides can only tighten them further. Whatever you leave unset falls through to the built-in defaults compiled into the binary (defined in `agent.go`, lines 47–51).
+
+```json
+{
+  "model": "Qwen3-Coder-30B-A3B-Instruct-GGUF",
+  "endpointUrl": "http://localhost:13305/api/v1",
+
+  "maxToolRounds":   15,
+  "maxTokenBudget":  150000,
+  "timeoutSeconds":  600,
+  "loopFingerprint": 3,
+  "maxResultLen":    16000,
+  "earlyStop":       true,
+
+  "servers": [...]
+}
+```
+
+After editing, restart the agent. Two ways to verify the resolved values without grepping logs:
+
+- The dashboard sidebar's **Active Safety Limits** panel shows them live.
+- `curl http://localhost:3131/api/v1/limits` returns the same data as JSON (see the next subsection).
+
+**Key naming — camelCase vs. snake_case:** the same six limits show up under different names at different layers. They're the same setting; only the casing convention differs (JSON-style on the server, request-body style on the wire).
+
+| Limit | `agent.json` (server defaults) | REST `limits` / MCP `_meta` (per-query) |
+|---|---|---|
+| Max tool rounds | `maxToolRounds` | `max_rounds` |
+| Max token budget | `maxTokenBudget` | `max_tokens` |
+| Timeout | `timeoutSeconds` | `timeout` |
+| Loop detect | `loopFingerprint` | `loop_detect` |
+| Max result | `maxResultLen` | `max_result` |
+| Early stop | `earlyStop` | `early_stop` |
+
+**Quick recipe — "I want longer-running queries":**
+
+```bash
+# 1. Edit go-agent/agent.json:  "maxToolRounds": 20, "timeoutSeconds": 900
+# 2. Restart the agent.
+# 3. Verify:
+curl -s http://localhost:3131/api/v1/limits | jq .defaults
+```
 
 **Discover the server's policy:**
 ```bash

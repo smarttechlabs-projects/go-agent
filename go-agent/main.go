@@ -22,10 +22,12 @@ import (
 	"syscall"
 )
 
-// version is the agent version. Overridden at build time via:
-//   go build -ldflags "-X main.version=$(git describe --tags --dirty)"
+// version is the agent version. Semver baseline; overridden at build time
+// from the most recent git tag (e.g. "v1.0.0" -> "1.0.0", with optional
+// "-N-gHASH" suffix when ahead of the tag, plus "-dirty" if uncommitted).
+//   go build -ldflags "-X main.version=$(git describe --tags --dirty | sed 's/^v//')"
 // The Makefile does this automatically.
-var version = "dev"
+var version = "1.0.0"
 
 func main() {
 	var (

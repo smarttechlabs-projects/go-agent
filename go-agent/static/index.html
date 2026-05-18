@@ -17,6 +17,7 @@
   /* Layout */
   .header { background: var(--surface); border-bottom: 1px solid var(--border); padding: 12px 24px; display: flex; align-items: center; gap: 16px; }
   .header h1 { font-size: 16px; font-weight: 600; }
+  .header h1 .version { font-size: 11px; color: var(--dim); font-weight: 400; font-family: monospace; margin-left: 6px; }
   .header .status { font-size: 12px; color: var(--dim); }
   .header .queue-status { font-size: 12px; color: var(--dim); margin-left: auto; display: flex; gap: 12px; align-items: center; }
   .queue-status .qs-item { display: flex; align-items: center; gap: 4px; }
@@ -121,12 +122,41 @@
   /* Streaming indicator */
   @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
   .streaming { animation: pulse 1.5s ease-in-out infinite; }
+
+  /* Session chip in header */
+  .session-chip { font-size: 12px; color: var(--dim); display: flex; align-items: center; gap: 6px; }
+  .session-chip .sid { font-family: monospace; color: var(--text); }
+  .session-chip button { background: none; border: 1px solid var(--border); color: var(--dim); border-radius: 4px; padding: 2px 8px; font-size: 11px; cursor: pointer; font-family: inherit; }
+  .session-chip button:hover { color: var(--text); border-color: var(--accent); }
+
+  /* Composer (query input area) -- overrides .main layout above */
+  .main { flex: 1; display: flex; flex-direction: column; overflow: hidden; padding: 0; }
+  .flow-pane { flex: 1; overflow-y: auto; padding: 24px; }
+  .composer { border-top: 1px solid var(--border); background: var(--surface); padding: 12px 16px; display: flex; gap: 8px; align-items: flex-end; }
+  .composer textarea { flex: 1; background: var(--bg); border: 1px solid var(--border); border-radius: 6px; color: var(--text); font-family: inherit; font-size: 13px; padding: 10px 12px; resize: none; min-height: 38px; max-height: 200px; line-height: 1.4; outline: none; }
+  .composer textarea:focus { border-color: var(--accent); }
+  .composer textarea:disabled { opacity: 0.5; cursor: not-allowed; }
+  .composer button { background: var(--accent); color: var(--bg); border: none; border-radius: 6px; padding: 10px 16px; font-size: 13px; font-weight: 600; cursor: pointer; min-width: 90px; height: 38px; font-family: inherit; }
+  .composer button:hover:not(:disabled) { opacity: 0.85; }
+  .composer button:disabled { background: var(--border); color: var(--dim); cursor: not-allowed; }
+  .composer .hint { font-size: 10px; color: var(--dim); align-self: center; padding: 0 4px; }
+
+  /* Session-totals stats strip above the composer */
+  .stats-strip { border-top: 1px solid var(--border); background: var(--surface); padding: 6px 16px; display: flex; gap: 16px; font-size: 11px; color: var(--dim); flex-wrap: wrap; align-items: center; }
+  .stats-strip .qs-item { display: flex; align-items: center; gap: 4px; }
+  .stats-strip .qs-label { color: var(--dim); }
+  .stats-strip .qs-value { color: var(--text); font-weight: 500; font-family: monospace; }
 </style>
 </head>
 <body>
 
 <div class="header">
-  <h1>LLM Agent</h1>
+  <h1>LLM Agent <span class="version" id="versionBadge"></span></h1>
+  <div class="session-chip" id="sessionChip">
+    <span>Session:</span>
+    <span class="sid">-</span>
+    <button id="newSessionBtn" title="Start a new session and clear the view">New</button>
+  </div>
   <div class="queue-status" id="queueStatus"></div>
   <div class="status"><span class="dot disconnected" id="statusDot"></span><span id="statusText">Connecting...</span></div>
 </div>
@@ -181,10 +211,18 @@
     </div>
   </div>
 
-  <div class="main" id="flow">
-    <div class="empty" id="emptyState">
-      <h2>Waiting for agent activity...</h2>
-      <p>Send a query in the terminal to see the agent loop visualized here.</p>
+  <div class="main">
+    <div class="flow-pane" id="flow">
+      <div class="empty" id="emptyState">
+        <h2>Waiting for agent activity...</h2>
+        <p>Send a query below or in the terminal to see the agent loop visualized here.</p>
+      </div>
+    </div>
+    <div class="stats-strip" id="statsStrip"></div>
+    <div class="composer">
+      <textarea id="queryInput" placeholder="Ask the agent... (Enter to send, Shift+Enter for newline)" rows="1"></textarea>
+      <span class="hint">&#9166; send</span>
+      <button id="submitBtn">Send</button>
     </div>
   </div>
 </div>
@@ -518,12 +556,18 @@ handleEvent = function(evt) {
   updateQueueDisplay(0, 20);  // Will be corrected by next poll.
 };
 
-// Poll health endpoint for queue depth (every 3s).
+// Poll health endpoint for queue depth (every 3s). Also picks up the agent
+// version on the first response and pins it next to the title.
 async function pollHealth() {
   try {
     const resp = await fetch('/api/v1/health');
     const data = await resp.json();
     updateQueueDisplay(data.queue_length || 0, data.queue_max || 20);
+    if (data.version) {
+      const badge = document.getElementById('versionBadge');
+      const text = 'v' + data.version;
+      if (badge && badge.textContent !== text) badge.textContent = text;
+    }
   } catch (e) {
     // Server not reachable -- display will update on reconnect.
   }
@@ -554,6 +598,157 @@ async function loadLimits() {
   }
 }
 loadLimits();
+
+// ----- Query input composer -----
+//
+// Submit queries from the browser instead of the terminal.
+// Backend: POST /api/v1/query/async returns immediately; the existing SSE
+// /events feed broadcasts every round/tool/answer regardless of what
+// triggered the query, so the dashboard visualizes it automatically.
+//
+// Each tab gets its own session_id (localStorage) so concurrent tabs don't
+// corrupt each other's conversation history. The SSE feed itself is shared
+// across all clients: with multiple tabs open you will see each other's
+// events. (Per-session SSE filtering would need a server-side change to tag
+// events with session_id.)
+
+const queryInput = document.getElementById('queryInput');
+const submitBtn = document.getElementById('submitBtn');
+const newSessionBtn = document.getElementById('newSessionBtn');
+const sidLabel = document.querySelector('#sessionChip .sid');
+
+function getSessionId() {
+  let sid = localStorage.getItem('llmagent.session');
+  if (!sid) {
+    sid = 'web-' + Math.random().toString(36).slice(2, 10);
+    localStorage.setItem('llmagent.session', sid);
+  }
+  return sid;
+}
+
+function refreshSessionLabel() {
+  if (sidLabel) sidLabel.textContent = getSessionId();
+}
+
+function setComposerBusy(busy) {
+  queryInput.disabled = busy;
+  submitBtn.disabled = busy;
+  submitBtn.textContent = busy ? 'Working…' : 'Send';
+  if (!busy) queryInput.focus();
+}
+
+async function submitQuery() {
+  const text = queryInput.value.trim();
+  if (!text || queryInput.disabled) return;
+
+  const original = queryInput.value;
+  setComposerBusy(true);
+  queryInput.value = '';
+  queryInput.style.height = 'auto';
+
+  try {
+    const resp = await fetch('/api/v1/query/async', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ query: text, session_id: getSessionId() }),
+    });
+    if (!resp.ok) {
+      let msg = resp.statusText;
+      try { msg = (await resp.json()).error || msg; } catch (e) {}
+      if (resp.status === 429) msg = 'Rate limit hit -- wait a moment and retry.';
+      alert('Submit failed: ' + msg);
+      queryInput.value = original;
+      setComposerBusy(false);
+    }
+    // On success, leave composer locked until query_end arrives over SSE.
+  } catch (e) {
+    alert('Network error: ' + e.message);
+    queryInput.value = original;
+    setComposerBusy(false);
+  }
+}
+
+queryInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault();
+    submitQuery();
+  }
+});
+queryInput.addEventListener('input', () => {
+  queryInput.style.height = 'auto';
+  queryInput.style.height = Math.min(queryInput.scrollHeight, 200) + 'px';
+});
+submitBtn.addEventListener('click', submitQuery);
+
+newSessionBtn.addEventListener('click', () => {
+  if (!confirm('Start a new session? The current view and stats will be cleared.')) return;
+  localStorage.removeItem('llmagent.session');
+  refreshSessionLabel();
+  // Remove all rendered query blocks and reset the visualization state.
+  Array.from(flow.querySelectorAll('.query-block')).forEach(el => el.remove());
+  const e = document.getElementById('emptyState');
+  if (e) e.style.display = '';
+  currentQuery = null;
+  currentRound = null;
+  eventData = {};
+  // Reset cumulative counters surfaced in header + footer strip.
+  totalQueries = 0;
+  totalRounds = 0;
+  sessionPromptTokens = 0;
+  sessionCompletionTokens = 0;
+  sessionLLMMs = 0;
+  updateStatsStrip();
+  updateQueueDisplay(0, 20);
+});
+
+// Re-use the SSE-driven busy flag to lock/unlock the composer.
+const prevHandleEventComposer = handleEvent;
+handleEvent = function(evt) {
+  prevHandleEventComposer(evt);
+  if (evt.type === 'query_start') setComposerBusy(true);
+  if (evt.type === 'query_end' || evt.type === 'error') setComposerBusy(false);
+  // Session-total accounting for the footer stats strip.
+  if (evt.type === 'llm_response') {
+    const d = evt.data || {};
+    if (d.prompt_tokens) sessionPromptTokens += d.prompt_tokens;
+    if (d.completion_tokens) sessionCompletionTokens += d.completion_tokens;
+    if (d.elapsed_ms) sessionLLMMs += d.elapsed_ms;
+  }
+  updateStatsStrip();
+};
+
+// ----- Footer stats strip -----
+//
+// Cumulative session totals shown above the composer: queries, rounds, token
+// I/O, average generation throughput, and total LLM wall-clock time. Reset
+// on "New session". Reuses the .qs-* styles from the header's queue-status.
+
+let sessionPromptTokens = 0;
+let sessionCompletionTokens = 0;
+let sessionLLMMs = 0;
+const statsStripEl = document.getElementById('statsStrip');
+
+function updateStatsStrip() {
+  if (!statsStripEl) return;
+  const totalTokens = sessionPromptTokens + sessionCompletionTokens;
+  const avgTps = sessionLLMMs > 0 ? (sessionCompletionTokens / (sessionLLMMs / 1000)) : 0;
+  const fmtTotal = totalTokens.toLocaleString();
+  const fmtIn = sessionPromptTokens.toLocaleString();
+  const fmtOut = sessionCompletionTokens.toLocaleString();
+  const fmtTps = avgTps > 0 ? avgTps.toFixed(1) : '-';
+  const fmtTime = sessionLLMMs > 0 ? (sessionLLMMs / 1000).toFixed(1) + 's' : '0s';
+  statsStripEl.innerHTML = `
+    <span class="qs-item"><span class="qs-label">Queries:</span> <span class="qs-value">${totalQueries}</span></span>
+    <span class="qs-item"><span class="qs-label">Rounds:</span> <span class="qs-value">${totalRounds}</span></span>
+    <span class="qs-item"><span class="qs-label">Tokens:</span> <span class="qs-value">${fmtTotal}</span> <span class="qs-label">(in ${fmtIn} / out ${fmtOut})</span></span>
+    <span class="qs-item"><span class="qs-label">Avg tok/s:</span> <span class="qs-value">${fmtTps}</span></span>
+    <span class="qs-item"><span class="qs-label">LLM time:</span> <span class="qs-value">${fmtTime}</span></span>
+  `;
+}
+
+updateStatsStrip();
+refreshSessionLabel();
+queryInput.focus();
 </script>
 </body>
 </html>

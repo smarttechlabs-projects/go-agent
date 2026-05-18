@@ -1,8 +1,12 @@
 .PHONY: deps vet build test mcp-test run query clean
 
-# Version: from git tag if available, else "dev". Embedded into the binary
-# via -ldflags so `./llm-agent -version` shows something meaningful.
-VERSION ?= $(shell git describe --tags --dirty --always 2>/dev/null || echo dev)
+# Version: from git tag if available, else the semver baseline 1.0.0.
+# `git describe` returns e.g. "v1.0.0" on a tagged commit, "v1.0.0-3-gHASH"
+# when ahead of the tag, and "v1.0.0-3-gHASH-dirty" with uncommitted changes.
+# The leading "v" is stripped so the displayed string is plain semver.
+# Override on the command line: `make build VERSION=1.2.3`.
+GITVER  := $(shell git describe --tags --dirty --always 2>/dev/null | sed 's/^v//')
+VERSION ?= $(or $(GITVER),1.0.0)
 LDFLAGS := -ldflags "-X main.version=$(VERSION)"
 
 # Resolve dependencies and generate go.sum
