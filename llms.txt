@@ -1,0 +1,66 @@
+# Lemonade + MCP: Local AI Agent
+
+> Reference architecture for AI agents driven by [MCP](https://modelcontextprotocol.io/) tool servers (headless browser, filesystem, URL fetch, port scanner).
+Backend-agnostic: works with any OpenAI-compatible endpoint — [Lemonade Server](https://github.com/lemonade-sdk/lemonade) (the original target, AMD-optimized
+local inference), [LM Studio](https://lmstudio.ai/), [vLLM](https://docs.vllm.ai/), [Ollama](https://ollama.com/),
+[llama.cpp](https://github.com/ggerganov/llama.cpp), or hosted providers like [OpenAI](https://platform.openai.com/), [Groq](https://groq.com/),
+[Together AI](https://together.ai/), [Mistral](https://mistral.ai/), [DeepSeek](https://deepseek.com/) — plus native adapters for
+[Google Gemini](https://ai.google.dev/) and [Anthropic Claude](https://docs.anthropic.com/). The provider is auto-detected from the endpoint URL.
+Ships two interchangeable agent implementations — a single-binary Go agent and a Python alternative — sharing one declarative `agent.json` config.
+
+The Go agent is production-leaning: per-query safety limits with strict-only client overrides, OpenTelemetry traces and metrics (OTLP push and Prometheus pull),
+a REST + MCP gateway, human-in-the-loop tool approvals, secret redaction in logs, and a live web dashboard with SSE event streaming. Local-only
+configurations need no API keys; cloud backends accept the relevant `LLM_API_KEY` / `OPENAI_API_KEY` / `GEMINI_API_KEY` / `ANTHROPIC_API_KEY` env vars.
+
+## Documentation
+
+- [README](README.md): top-level overview, prerequisites, and the default quick-start path (clone → validate → build → start an LLM backend → run agent).
+The default walkthrough uses Lemonade Server; pointing the agent at any other supported backend is a single `-endpoint` flag.
+- [Go agent README](go-agent/README.md): architecture, REST API, MCP SSE gateway, per-query safety limits, observability, configuration, model
+zcompatibility, extending with custom MCP servers
+- [Python agent README](docs/README.md): Hugging Face Tiny Agents setup and usage
+
+## Configuration
+
+- [Go agent config](go-agent/agent.json): default MCP servers (Playwright + filesystem + fetch + ports) and model
+- [Go agent system prompt](go-agent/PROMPT.md): default agent prompt — customize for your use case
+- [Python agent config — Linux/macOS](docs/agent.json)
+- [Python agent config — Windows](docs/agent-windows.json)
+- [Python agent system prompt](docs/PROMPT.md)
+
+## Source code (Go)
+
+- [main.go](go-agent/main.go): CLI entry, flag parsing, signal handling, OpenTelemetry wiring
+- [agent.go](go-agent/agent.go): agent lifecycle, session table, startup checks
+- [session.go](go-agent/session.go): per-session state and the agent loop (LLM ↔ tool cycle, history trim, parallel tool dispatch)
+- [llm.go](go-agent/llm.go): OpenAI-compatible LLM client with streaming, TTFT metrics, retries, and `parseServerError`
+- [gemini.go](go-agent/gemini.go) / [anthropic.go](go-agent/anthropic.go): native adapters for Gemini and Anthropic APIs
+- [mcp.go](go-agent/mcp.go): MCP server lifecycle, tool filtering (`allowTools`), tool bridging
+- [limits.go](go-agent/limits.go): per-query safety limits and clamping logic
+- [config.go](go-agent/config.go): config loading, env expansion, tool-call style detection, provider auto-detection
+- [policy.go](go-agent/policy.go): termination heuristics (terminal errors, repeated tool failures)
+- [web.go](go-agent/web.go): web dashboard scaffolding (handlers split into `web_query.go`, `web_admin.go`, `web_mcp.go`)
+- [events.go](go-agent/events.go): SSE event types and broadcaster
+- [metrics.go](go-agent/metrics.go): OpenTelemetry metrics — six instruments, OTLP push + Prometheus pull at `/api/v1/metrics`
+- [otel.go](go-agent/otel.go): OpenTelemetry tracing setup
+- [approval.go](go-agent/approval.go): human-in-the-loop tool approval queue
+- [queue.go](go-agent/queue.go): job queue for async REST requests
+- [ratelimit.go](go-agent/ratelimit.go): per-IP token-bucket rate limiter
+- [redact.go](go-agent/redact.go): secret redaction in log output
+- [static/index.html](go-agent/static/index.html): embedded dashboard UI (no build step)
+
+## Example narrow MCP server
+
+- [mcp-servers/ports/main.go](mcp-servers/ports/main.go): reference port-scanner MCP server (stdio + SSE transports, zero external dependencies) — a worked example of building your own narrow MCP server
+
+## Optional
+
+- [LICENSE](LICENSE): Apache 2.0
+- [scripts/start-lemonade.sh](scripts/start-lemonade.sh): Lemonade Server lifecycle (start, stop, config, pull, load, test)
+- [scripts/validate-setup.sh](scripts/validate-setup.sh): pre-flight dependency checker
+- [scripts/agent-cli.sh](scripts/agent-cli.sh): curl wrapper for the agent's HTTP surface
+- [scripts/agent_demo.py](scripts/agent_demo.py): programmatic Python example using `huggingface_hub.Agent`
+- [scripts/shutdown.sh](scripts/shutdown.sh): graceful shutdown of agent + Lemonade
+- [.github/workflows/ci.yml](.github/workflows/ci.yml): CI configuration
+
+ Contact: ai-consulting@smarttechlabs.de

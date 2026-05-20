@@ -13,7 +13,7 @@ MARKER="SmartTechLabs AI Workshop material"
 # Header body (without comment prefix). One blank line at the end.
 read -r -d '' BODY <<'EOF' || true
 This file is part of the SmartTechLabs AI Workshop material.
-Contact: ai-lab@smarttechlabs.de — https://www.smarttechlabs.de
+Contact: ai-consulting@smarttechlabs.de — https://www.smarttechlabs.de
 SmartTechLabs is also available for AI projects and consulting.
 
 Licensed under the Apache License, Version 2.0 (the "License");

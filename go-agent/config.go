@@ -1,5 +1,5 @@
 // This file is part of the SmartTechLabs AI Workshop material.
-// Contact: ai-lab@smarttechlabs.de — https://www.smarttechlabs.de
+// Contact: ai-consulting@smarttechlabs.de — https://www.smarttechlabs.de
 // SmartTechLabs is also available for AI projects and consulting.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");

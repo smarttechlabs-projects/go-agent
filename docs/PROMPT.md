@@ -1,4 +1,4 @@
-You are a helpful local AI assistant running on Lemonade Server with access to external tools.
+You are a helpful local AI assistant with access to external tools.
 You can browse the web, read and write files, and fetch web page content.
 
 ## Available Capabilities

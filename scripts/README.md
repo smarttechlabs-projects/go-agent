@@ -1,7 +1,6 @@
 # Scripts
 
-Utility scripts for managing the Lemonade Server and running quick demos. All scripts are designed to be run from the 
-repository root.
+Utility scripts for managing the Lemonade Server, driving a running agent, and running quick demos. All scripts are designed to be run from the repository root.
 
 ## start-lemonade.sh
 
@@ -90,18 +89,18 @@ This script only touches processes owned by your own UID; it will not kill a Lem
 
 ## validate-setup.sh
 
-Pre-flight checker that verifies all prerequisites (Python, Node.js, uv, Lemonade Server) are installed and at the required versions. Run this first if 
-something isn't working.
+Pre-flight checker that verifies all prerequisites (Python, Node.js, uv, Lemonade Server) are installed and at the required versions. Run this first if something isn't working.
 
 ```bash
 scripts/validate-setup.sh
 ```
 
-## agent_demo.py
+## apply-license-headers.sh
 
-Programmatic Python example showing how to run the [Tiny Agents](https://huggingface.co/blog/python-tiny-agents) loop from code (no CLI required). Useful for embedding the agent in your own applications.
+Maintainer utility that prepends the SmartTechLabs / Apache 2.0 license header to every `.go`, `.py`, and `.sh` source file in the repo. Idempotent: files that already contain the marker line are skipped, so it's safe to re-run after adding new source files. Honours existing shebangs (`#!/usr/bin/env …`) by keeping them on line 1 and inserting the header after.
 
 ```bash
-# Requires: pip install "huggingface_hub[mcp]>=0.33.2"
-python scripts/agent_demo.py "What are the latest developments in WebXR?"
+scripts/apply-license-headers.sh
 ```
+
+Output reports how many files were updated and how many already had the header. Skips `node_modules/`, `.git/`, and `go-agent/static/`.

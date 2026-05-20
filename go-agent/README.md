@@ -6,6 +6,8 @@ Supported backends:
 - **Local** (no API key): [Lemonade Server](https://github.com/lemonade-sdk/lemonade), [LM Studio](https://lmstudio.ai/), [vLLM](https://docs.vllm.ai/), [Ollama](https://ollama.com/), or any OpenAI-compatible endpoint
 - **Commercial**: [OpenAI](https://platform.openai.com/) (GPT-4o), [Anthropic](https://docs.anthropic.com/) (Claude), [Google Gemini](https://ai.google.dev/), [Groq](https://groq.com/), [Together AI](https://together.ai/), [Mistral](https://mistral.ai/), [DeepSeek](https://deepseek.com/)
 
+See [tool-migration.md](../docs/tool-migration.md) for backend-specific setup.
+
 ## Scope & Positioning
 
 This is a **reference-quality local agent with production-ish polish** -- intended to be a readable, single-binary reference implementation rather than a managed platform. Compared to typical production agent systems:
@@ -295,7 +297,7 @@ This is why **narrow MCP servers with sharp tool descriptions produce shorter, b
 
 | Component | Version | Link |
 |---|---|---|
-| Go | >= 1.22 | [go.dev](https://go.dev/dl/) |
+| Go | >= 1.26 | [go.dev](https://go.dev/dl/) |
 | Lemonade Server | >= 7.0.2 | [GitHub](https://github.com/lemonade-sdk/lemonade) / [Docs](https://lemonade-server.ai/docs/server/) |
 | Node.js | >= 18 | [nodejs.org](https://nodejs.org/) (for npx to spawn MCP servers) |
 | uv | >= 0.4 | [docs.astral.sh](https://docs.astral.sh/uv/) (for uvx to spawn mcp-server-fetch) |
