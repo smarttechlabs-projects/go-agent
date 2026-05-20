@@ -87,11 +87,39 @@ func isToolFailure(result string) bool {
 		return true
 	}
 	lower := strings.ToLower(trimmed)
-	// Common MCP error / empty markers, anchored to the start of the
-	// result so prose discussing errors doesn't trip the check.
-	return strings.HasPrefix(lower, "error:") ||
+
+	// Anchored prefix checks for MCP-style error markers. Conservative on
+	// purpose -- prose that happens to mention "errors" must not trip
+	// this branch (see policy.go header for the rationale).
+	if strings.HasPrefix(lower, "error:") ||
 		strings.HasPrefix(lower, `{"error"`) ||
 		strings.HasPrefix(lower, "no results") ||
 		strings.HasPrefix(lower, "(no results)") ||
-		strings.HasPrefix(lower, "(no content)")
+		strings.HasPrefix(lower, "(no content)") {
+		return true
+	}
+
+	// Anti-bot / CAPTCHA challenge markers. Search engines and CDNs serve
+	// a 200-OK challenge page when they detect a headless browser, so the
+	// tool result looks successful but contains no useful content -- the
+	// model would otherwise retry the same URL until max-rounds. These
+	// markers are highly specific to challenge pages; false positives on
+	// real content quoting them in passing are unlikely enough that the
+	// alternative (silently looping on /sorry/index) is the worse failure.
+	antiBotMarkers := []string{
+		"google.com/sorry",
+		"/sorry/index",
+		"our systems have detected unusual traffic",
+		"unusual traffic from your computer network",
+		"complete the captcha",
+		"verify you are a human",
+		"are you a robot",
+		"cloudflare ray id",
+	}
+	for _, m := range antiBotMarkers {
+		if strings.Contains(lower, m) {
+			return true
+		}
+	}
+	return false
 }
